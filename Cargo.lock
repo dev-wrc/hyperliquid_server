@@ -977,6 +977,7 @@ dependencies = [
  "clap",
  "env_logger",
  "futures-util",
+ "log",
  "server",
  "tokio",
  "tokio-tungstenite",

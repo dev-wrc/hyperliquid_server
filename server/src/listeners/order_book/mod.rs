@@ -34,6 +34,8 @@ use tokio::{
 };
 use utils::{BatchQueue, EventBatch, process_rmp_file, validate_snapshot_consistency};
 
+const MAX_FALL_BEHIND_DURAITON: Duration = Duration::from_secs(10000);
+
 mod state;
 mod utils;
 
@@ -122,7 +124,7 @@ pub(crate) async fn hl_listen(listener: Arc<Mutex<OrderBookListener>>, dir: Path
                 let snapshot_fetch_task_tx = snapshot_fetch_task_tx.clone();
                 fetch_snapshot(dir.clone(), listener, snapshot_fetch_task_tx, ignore_spot);
             }
-            () = sleep(Duration::from_secs(5)) => {
+            () = sleep(MAX_FALL_BEHIND_DURAITON) => {
                 let listener = listener.lock().await;
                 if listener.is_ready() {
                     return Err(format!("Stream has fallen behind ({HL_NODE} failed?)").into());

@@ -6,6 +6,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 #[derive(Debug, Clone, ValueEnum)]
 enum Subscription {
+    Bbo,
     L2Book,
     L4Book,
     Trades,
@@ -40,20 +41,23 @@ async fn main() -> Result<()> {
     let (mut write, mut read) = ws_stream.split();
 
     // Define subscription messages
-    let l2_book_sub =
-        r#"{"method":"subscribe","subscription":{"type":"l2Book","coin":"BTC","nSigFigs":5,"mantissa":5}}"#;
+    let bbo_book_sub = r#"{"method":"subscribe","subscription":{"type":"l2Book","coin":"BTC","nLevels":1}}"#;
+    let l2_book_sub = r#"{"method":"subscribe","subscription":{"type":"l2Book","coin":"BTC","nLevels":100}}"#;
     let l4_book_sub = r#"{"method":"subscribe","subscription":{"type":"l4Book","coin":"BTC"}}"#;
     let trades_sub = r#"{"method":"subscribe","subscription":{"type":"trades","coin":"BTC"}}"#;
 
     // Choose subscription
     match args.subscription {
+        Subscription::Bbo => write.send(Message::Text(bbo_book_sub.into())).await?,
         Subscription::L2Book => write.send(Message::Text(l2_book_sub.into())).await?,
         Subscription::L4Book => write.send(Message::Text(l4_book_sub.into())).await?,
         Subscription::Trades => write.send(Message::Text(trades_sub.into())).await?,
     }
 
     let mut msg_cnt = 0;
-    while let Some(msg) = read.next().await {
+    while let Some(msg) = read.next().await
+        && msg_cnt < 3
+    {
         match msg {
             Ok(Message::Text(txt)) => println!("Received text {msg_cnt}: {txt}"),
             Ok(Message::Binary(bin)) => println!("Received binary: {bin:?}"),
@@ -70,6 +74,38 @@ async fn main() -> Result<()> {
             }
         }
         msg_cnt += 1;
+    }
+
+    // Define unsubscription messages
+    let bbo_book_sub = r#"{"method":"unsubscribe","subscription":{"type":"l2Book","coin":"BTC","nLevels":1}}"#;
+    let l2_book_sub = r#"{"method":"unsubscribe","subscription":{"type":"l2Book","coin":"BTC","nLevels":100}}"#;
+    let l4_book_sub = r#"{"method":"unsubscribe","subscription":{"type":"l4Book","coin":"BTC"}}"#;
+    let trades_sub = r#"{"method":"unsubscribe","subscription":{"type":"trades","coin":"BTC"}}"#;
+
+    // Choose subscription
+    match args.subscription {
+        Subscription::Bbo => write.send(Message::Text(bbo_book_sub.into())).await?,
+        Subscription::L2Book => write.send(Message::Text(l2_book_sub.into())).await?,
+        Subscription::L4Book => write.send(Message::Text(l4_book_sub.into())).await?,
+        Subscription::Trades => write.send(Message::Text(trades_sub.into())).await?,
+    }
+
+    while let Some(msg) = read.next().await {
+        match msg {
+            Ok(Message::Text(txt)) => println!("Received text {msg_cnt}: {txt}"),
+            Ok(Message::Binary(bin)) => println!("Received binary: {bin:?}"),
+            Ok(Message::Ping(_)) => println!("Received ping"),
+            Ok(Message::Pong(_)) => println!("Received pong"),
+            Ok(Message::Close(frame)) => {
+                println!("Received close: {frame:?}");
+                break;
+            }
+            Ok(other) => println!("Received other message: {other:?}"),
+            Err(err) => {
+                eprintln!("WebSocket error: {err}");
+                break;
+            }
+        }
     }
 
     println!("Connection closed");

@@ -37,7 +37,14 @@ async fn main() -> Result<()> {
     println!("Running websocket server on {full_address}");
 
     let compression_level = args.websocket_compression_level.unwrap_or(/* Some compression */ 1);
-    run_websocket_server(&full_address, true, compression_level).await?;
+    loop {
+        match run_websocket_server(&full_address, true, compression_level).await {
+            Ok(()) => break,
+            Err(e) => log::error!("{e}: Server errored, restarting"),
+        }
+    }
+
+    log::info!("Exiting");
 
     Ok(())
 }
