@@ -8,7 +8,7 @@ use crate::{
         L2Book, L4Book, L4BookUpdates, L4Order, Trade,
         inner::InnerLevel,
         node_data::{Batch, NodeDataFill, NodeDataOrderDiff, NodeDataOrderStatus},
-        subscription::{ClientMessage, DEFAULT_LEVELS, ServerResponse, Subscription, SubscriptionManager},
+        subscription::{ClientMessage, DEFAULT_LEVELS, Error, ServerResponse, Subscription, SubscriptionManager},
     },
 };
 use axum::{Router, response::IntoResponse, routing::get};
@@ -106,7 +106,11 @@ async fn handle_socket(
     let mut manager = SubscriptionManager::default();
     let mut universe = listener.lock().await.universe().into_iter().map(|c| c.value()).collect();
     if !is_ready {
-        let msg = ServerResponse::Error("Order book not ready for streaming (waiting for snapshot)".to_string());
+        let msg = ServerResponse::Error(Error {
+            subscribe: None,
+            coin: None,
+            msg: "Order book not ready for streaming (waiting for snapshot)".to_string(),
+        });
         send_socket_message(&mut socket, msg).await;
         return;
     }
@@ -163,7 +167,11 @@ async fn handle_socket(
                                 receive_client_message(&mut socket, &mut manager, value, &universe, listener.clone()).await;
                             }
                             else {
-                                let msg = ServerResponse::Error(format!("Error parsing JSON into valid websocket request: {text}"));
+                                let msg = ServerResponse::Error(Error {
+                                    subscribe: None,
+                                    coin: None,
+                                    msg: format!("Error parsing JSON into valid websocket request: {text}")
+                                });
                                 send_socket_message(&mut socket, msg).await;
                             }
                         }
@@ -192,10 +200,19 @@ async fn receive_client_message(
     let subscription = match &client_message {
         ClientMessage::Unsubscribe { subscription } | ClientMessage::Subscribe { subscription } => subscription.clone(),
     };
+    let subscribe = match client_message {
+        ClientMessage::Subscribe { .. } => true,
+        ClientMessage::Unsubscribe { .. } => false,
+    };
     // this is used for display purposes only, hence unwrap_or_default. It also shouldn't fail
     let sub = serde_json::to_string(&subscription).unwrap_or_default();
+    let coin = subscription.coin().to_string();
     if !subscription.validate(universe) {
-        let msg = ServerResponse::Error(format!("Invalid subscription: {sub}"));
+        let msg = ServerResponse::Error(Error {
+            subscribe: Some(subscribe),
+            coin: Some(coin),
+            msg: format!("Invalid subscription: {sub}"),
+        });
         send_socket_message(socket, msg).await;
         return;
     }
@@ -210,7 +227,11 @@ async fn receive_client_message(
                 Ok(msg) => msg,
                 Err(err) => {
                     manager.unsubscribe(subscription.clone());
-                    let msg = ServerResponse::Error(format!("Unable to grab order book snapshot: {err}"));
+                    let msg = ServerResponse::Error(Error {
+                        subscribe: None,
+                        coin: Some(coin),
+                        msg: format!("Unable to grab order book snapshot: {err}"),
+                    });
                     send_socket_message(socket, msg).await;
                     return;
                 }
@@ -224,7 +245,11 @@ async fn receive_client_message(
             send_socket_message(socket, snapshot_msg).await;
         }
     } else {
-        let msg = ServerResponse::Error(format!("Already {word}subscribed: {sub}"));
+        let msg = ServerResponse::Error(Error {
+            subscribe: Some(subscribe),
+            coin: Some(coin),
+            msg: format!("Already {word}subscribed: {sub}"),
+        });
         send_socket_message(socket, msg).await;
     }
 }

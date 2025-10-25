@@ -71,6 +71,21 @@ impl Subscription {
             }
         }
     }
+
+    pub(crate) fn coin(&self) -> &str {
+        match self {
+            Subscription::Trades { coin } => coin,
+            Subscription::L2Book { coin, .. } => coin,
+            Subscription::L4Book { coin } => coin,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct Error {
+    pub coin: Option<String>,
+    pub subscribe: Option<bool>,
+    pub msg: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -81,7 +96,7 @@ pub(crate) enum ServerResponse {
     L2Book(L2Book),
     L4Book(L4Book),
     Trades(Vec<Trade>),
-    Error(String),
+    Error(Error),
 }
 
 #[derive(Default)]
